@@ -1,0 +1,700 @@
+---
+title: "MARONE: STMO PROJECT"
+---
+
+# Data Pre-processing
+
+## Data extraction & First Insight
+
+```{r}
+# Load the data
+data <- read.csv("insurance.csv")
+
+# Display the structure of the dataframe
+str(data)
+
+# Display the first few rows of the dataframe
+head(data)
+```
+
+## Shape and data type
+
+```{r}
+# Check the shape of the dataframe
+data_shape <- dim(data)
+
+# Display the result
+cat("Number of rows:", data_shape[1], "\n")
+cat("Number of columns:", data_shape[2], "\n")
+```
+
+```{r}
+# Check the data types of the features
+feature_types <- sapply(data, class)
+
+# Display the result
+print(feature_types)
+```
+
+## Converting the character into categorical feature and also children
+
+```{r}
+# Convert non-numerical features to categorical features
+data$sex <- as.factor(data$sex)
+data$smoker <- as.factor(data$smoker)
+data$region <- as.factor(data$region)
+data$children <- as.factor(data$children)
+
+# Check the data types after conversion
+feature_types_after_conversion <- sapply(data, class)
+print(feature_types_after_conversion)
+```
+
+## Checking Missing Values
+
+```{r}
+# Check for missing values in the entire dataframe
+any_missing <- any(is.na(data))
+
+# Check for missing values in each column
+missing_per_column <- colSums(is.na(data))
+
+# Display the results
+cat("Any missing values in the dataframe:", any_missing, "\n")
+cat("Missing values per column:\n")
+print(missing_per_column)
+```
+
+```{r}
+library(visdat)
+vis_dat(data)
+```
+
+# Exploratory and Descriptive Data Analysis
+
+## Summary and distribution of numerical features
+
+### Summary function
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# Custom function to calculate mode
+calculate_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Assuming 'data' is a global variable or defined somewhere accessible
+
+# Function to summarize and plot a feature
+summary_plot <- function(feature_name, bin_width) {
+  
+  # Extract the specified feature
+  feature <- data[[feature_name]]
+  
+  # Summary statistics
+  n <- length(feature)
+  mean_val <- mean(feature)
+  var_val <- var(feature)
+  q1_val <- quantile(feature, 0.25)
+  q3_val <- quantile(feature, 0.75)
+  mode_val <- calculate_mode(feature)
+  max_val <- max(feature)
+  min_val <- min(feature)
+  
+  # Confidence Intervals
+  # Confidence interval for the mean
+  mean_ci <- t.test(x = feature)$conf.int
+  
+  # Confidence interval for the variance
+  alpha <- 0.05  # significance level
+  df <- n - 1  # degrees of freedom
+  upper <- df * var_val / qchisq(alpha / 2, df)
+  lower <- df * var_val / qchisq(1 - alpha / 2, df)
+  var_ci <- c(lower, upper)
+  
+  custom_summary <- data.frame(
+    Mean = mean_val,
+    Mean_CI_Lower = mean_ci[1],
+    Mean_CI_Upper = mean_ci[2],
+    Variance = var_val,
+    Variance_CI_Lower = var_ci[1],
+    Variance_CI_Upper = var_ci[2],
+    Q1 = q1_val,
+    Q3 = q3_val,
+    Mode = mode_val,
+    Max = max_val,
+    Min = min_val
+  )
+  
+  print(custom_summary)
+
+
+  
+  # Plots
+  histogram_plot <- ggplot(data, aes(x = feature)) +
+    geom_histogram(aes(y = ..density..), binwidth = bin_width, fill = "lightblue", color = "black", alpha = 0.7) +
+    geom_density(color = "red", linetype = "dashed") +  # Add density curve
+    labs(title = paste("Histogram of", feature_name), x = feature_name, y = "Density") +
+    theme_minimal()
+
+  
+  violin_plot <- ggplot(data, aes(x = factor(1), y = feature)) +
+    geom_violin(fill = "lightgreen", color = "black", alpha = 0.7) +
+    labs(title = paste("Violin Plot of", feature_name), x = "", y = feature_name) +
+    theme_minimal() +
+    theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())
+  
+  boxplot_plot <- ggplot(data, aes(x = factor(1), y = feature)) +
+    geom_boxplot(fill = "lightcoral", color = "black", alpha = 0.7) +
+    labs(title = paste("Boxplot of", feature_name), x = "", y = feature_name) +
+    theme_minimal() +
+    theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())
+  
+  cumulative_plot <- ggplot(data, aes(x = feature)) +
+    stat_ecdf(geom = "step", color = "blue") +
+    labs(title = paste("Cumulative Frequency Distribution of", feature_name), x = feature_name, y = "Cumulative Frequency") +
+    theme_minimal()
+  
+  # Arrange the plots in one figure
+  grid.arrange(histogram_plot, violin_plot, boxplot_plot, cumulative_plot, ncol = 2)
+}
+```
+
+### Summary and distribution of : Age
+
+```{r}
+summary_plot("age", 5)
+```
+
+### Summary and distribution of : BMI
+
+```{r}
+summary_plot("bmi", 5)
+```
+
+### Summary and distribution of : Charges
+
+```{r}
+summary_plot("charges", 1700)
+```
+
+## Summary and distribution categorical features
+
+### Functions that plot
+
+```{r}
+summary_categorical_feature <- function(feature, alpha = 0.05) {
+  # Plotting
+  plot <- ggplot(data, aes(x = get(feature), fill = get(feature))) +
+    geom_bar(color = "black", stat = "count") +
+    labs(title = paste("Count Plot of", feature),
+         x = feature, y = "Count") +
+    scale_fill_manual(values = c("red", "blue", "green", "magenta", "yellow", "brown")) +  # Adjust the colors as needed
+    theme_minimal()
+  
+  print(plot)
+  
+  # Compute proportions and confidence intervals
+  feature_data <- data[[feature]]
+  prop_table <- table(feature_data)
+  total_obs <- length(feature_data)
+  result_df <- data.frame(Category = character(), Proportion = numeric(), Lower_CI = numeric(), Upper_CI = numeric(), stringsAsFactors = FALSE)
+  
+  for (category in names(prop_table)) {
+    count_category <- prop_table[[category]]
+    proportion <- count_category / total_obs
+    conf_interval <- prop.test(count_category, total_obs, conf.level = 1 - alpha)$conf.int
+    result_row <- data.frame(Category = category,
+                             Proportion = proportion,
+                             Lower_CI = conf_interval[1],
+                             Upper_CI = conf_interval[2],
+                             stringsAsFactors = FALSE)
+    result_df <- rbind(result_df, result_row)
+  }
+  
+  return(result_df)
+}
+```
+
+```{r}
+# Function to create a count plot of one categorical feature grouped by another
+count_plot_two_categorical <- function(feature1, feature2) {
+  ggplot(data, aes(x = get(feature1), fill = get(feature2))) +
+    geom_bar(position = "dodge", color = "black", stat = "count") +
+    labs(title = paste("                     Count Plot of", feature1, "Grouped by", feature2),
+         x = feature1, y = "Count") +
+    theme_minimal() +
+    theme(legend.position = "top")
+}
+```
+
+```{r}
+library(ggplot2)
+
+# Function to create histograms, violin plots, and box plots
+plot_numerical_by_categorical <- function(numerical_feature, categorical_feature, bin_width) {
+  
+  # Histogram
+  histogram_plot <- ggplot(data, aes(x = get(numerical_feature), fill = get(categorical_feature))) +
+    geom_histogram(binwidth = bin_width, color = "black", alpha = 0.7, position = "identity") +
+    labs(title = paste("Superposed Histogram of", numerical_feature, "by", categorical_feature),
+         x = numerical_feature, y = "Count") +
+    theme_minimal()
+  
+  # Violin plot
+  violin_plot <- ggplot(data, aes(x = get(categorical_feature), y = get(numerical_feature), fill = get(categorical_feature))) +
+    geom_violin(color = "black", alpha = 0.7) +
+    labs(title = paste("Violin Plot of", numerical_feature, "by", categorical_feature),
+         x = categorical_feature, y = numerical_feature) +
+    theme_minimal()
+  
+  # Box plot
+  box_plot <- ggplot(data, aes(x = get(categorical_feature), y = get(numerical_feature), fill = get(categorical_feature))) +
+    geom_boxplot(color = "black", alpha = 0.7) +
+    labs(title = paste("Box Plot of", numerical_feature, "by", categorical_feature),
+         x = categorical_feature, y = numerical_feature) +
+    theme_minimal()
+  
+  #  Arrange the plots in one figure
+  grid.arrange(histogram_plot, violin_plot, box_plot, ncol = 2)
+}
+```
+
+```{r}
+# load the package rstatix
+library(rstatix)
+
+# define the function
+test_distribution <- function(categorical_feature, numerical_feature) {
+  # perform Kruskal-Wallis test
+  result <- data %>%
+    group_by(data[[categorical_feature]]) %>%
+    kruskal_test(data[[numerical_feature]] ~ data[[categorical_feature]])
+  
+  # return the p-value
+  return(result)
+}
+```
+
+### The Distribution of the sex
+
+```{r}
+# Considering the entire data set
+summary_categorical_feature("sex")
+
+# Considering the smokers
+count_plot_two_categorical("smoker", "sex")
+
+# Considering the Region
+count_plot_two_categorical("region", "sex")
+
+# Considering the Children
+count_plot_two_categorical("children", "sex")
+
+# distribution of the age among the smokers
+plot_numerical_by_categorical("age", "sex", 3)
+
+# Distribution of the BMI among smokers
+plot_numerical_by_categorical("bmi", "sex", 3)
+
+# Distribution of the charges among smokers
+plot_numerical_by_categorical("charges", "sex", 1300)
+```
+
+```{r}
+p_value <- test_distribution("sex", "charges")
+print(p_value)
+
+p_value <- test_distribution("sex", "bmi")
+print(p_value)
+
+p_value <- test_distribution("sex", "age")
+print(p_value)
+```
+
+### The Distribution of the smokers
+
+```{r}
+# Considering the entire data set
+summary_categorical_feature("smoker")
+
+# Considering the region
+count_plot_two_categorical("region", "smoker")
+
+# Considering the number of children
+count_plot_two_categorical("children", "smoker")
+
+# distribution of the age among the smokers
+plot_numerical_by_categorical("age", "smoker", 3)
+
+# Distribution of the BMI among smokers
+plot_numerical_by_categorical("bmi", "smoker", 3)
+
+# Distribution of the charges among smokers
+plot_numerical_by_categorical("charges", "smoker", 1300)
+```
+
+```{r}
+p_value <- test_distribution("smoker", "charges")
+print(p_value)
+
+p_value <- test_distribution("smoker", "bmi")
+print(p_value)
+
+p_value <- test_distribution("smoker", "age")
+print(p_value)
+```
+
+### The Distribution of the children
+
+```{r}
+# Considering the entire data set
+summary_categorical_feature("children")
+
+# Considering the region
+count_plot_two_categorical("region", "children")
+
+# distribution of the age among the smokers
+plot_numerical_by_categorical("age", "children", 3)
+
+# Distribution of the BMI among smokers
+plot_numerical_by_categorical("bmi", "children", 3)
+
+# Distribution of the charges among smokers
+plot_numerical_by_categorical("charges", "children", 3500)
+```
+
+```{r}
+# Assuming data is your data frame
+data$many_children <- ifelse(data$children %in% c(0, 1, 2), 0, 1)
+data$many_children <- as.factor(data$many_children)
+
+# Considering the entire data set
+summary_categorical_feature("many_children")
+
+# Distribution of the charges among smokers
+plot_numerical_by_categorical("charges", "many_children", 3500)
+
+count_plot_two_categorical("smoker", "many_children")
+```
+
+```{r}
+p_value <- test_distribution("many_children", "charges")
+print(p_value)
+
+p_value <- test_distribution("many_children", "bmi")
+print(p_value)
+
+p_value <- test_distribution("many_children", "age")
+print(p_value)
+```
+
+```{r}
+# Considering the entire data set
+summary_categorical_feature("region")
+
+# distribution of the age among the smokers
+plot_numerical_by_categorical("age", "region", 3)
+
+# Distribution of the BMI among smokers
+plot_numerical_by_categorical("bmi", "region", 3)
+
+# Distribution of the charges among smokers
+plot_numerical_by_categorical("charges", "region", 3500)
+```
+
+```{r}
+p_value <- test_distribution("region", "charges")
+print(p_value)
+```
+
+## Variable selection
+
+```{r}
+data_new <- data[, -which(names(data) == "sex")]
+data_new <- data_new[, -which(names(data_new) == "children")]
+data_new <- data_new[, -which(names(data_new) == "region")]
+```
+
+## Scatter plots
+
+```{r}
+# load the package : ggplot2 & GGally
+library(ggplot2)
+library(GGally)
+
+# Assuming data_new is your dataframe
+ggpairs(data_new, mapping = ggplot2::aes(color = smoker), progress = FALSE)
+```
+
+## Correlation matrix
+
+```{r}
+# Select numeric variables for the correlation matrix
+numeric_data <- data_new[sapply(data_new, is.numeric)]
+
+# Create a correlation matrix plot
+ggcorr(numeric_data, label = TRUE, label_alpha = TRUE, label_color = "black", hjust = 0.5, vjust = 1, palette = "RdYlBu")
+```
+
+# Hypothesis test
+
+## Conditions verification
+
+### function
+
+```{r}
+library(car)
+library(lmtest)
+
+# define the function
+check_assumptions <- function(model) {
+  # initialize a data frame to store the results
+  results <- data.frame(test = character(), p_value = numeric())
+  
+  # check for multivariate normality
+  shapiro_test <- shapiro.test(residuals(model))
+  results <- rbind(results, data.frame(test = "Multivariate normality", p_value = shapiro_test$p.value))
+  
+  # check for multicollinearity
+  vif_values <- vif(model)
+  if (any(vif_values > 5)) {
+    results <- rbind(results, data.frame(test = "Multicollinearity", p_value = NA))
+  }
+  
+  # check for autocorrelation
+  durbin_watson_test <- durbinWatsonTest(model)
+  results <- rbind(results, data.frame(test = "Autocorrelation", p_value = durbin_watson_test$p))
+  
+  # check for homoscedasticity
+  bp_test <- bptest(model)
+  results <- rbind(results, data.frame(test = "Homoscedasticity", p_value = bp_test$p.value))
+  
+  # return the results
+  return(results)
+}
+```
+
+### Variables : smoker, bmi, age, many_children
+
+```{r}
+# fit a linear regression model
+lm_model <- lm(charges ~ ., data = data_new)
+
+# use the function
+results <- check_assumptions(lm_model)
+print(results)
+
+summary(lm_model)
+```
+
+### Variables : smoker, bmi, age
+
+```{r}
+# Remove the "many_children" column
+data_rmv_many_children <- data_new[, -which(names(data_new) == "many_children")]
+
+# fit a linear regression model
+lm_model_rmv_many_children <- lm(charges ~ ., data = data_rmv_many_children)
+
+# use the function
+results <- check_assumptions(lm_model_rmv_many_children)
+print(results)
+
+summary(lm_model_rmv_many_children)
+```
+
+### Variables : bmi, age
+
+```{r}
+# Remove the "smoker" and "many_children" column
+data_rmv_manY_children_smoker <- data_new[, -which(names(data_new) == "smoker")]
+data_rmv_manY_children_smoker <- data_rmv_manY_children_smoker[, -which(names(data_rmv_manY_children_smoker) == "many_children")]
+
+# fit a linear regression model
+lm_model_rmv_manY_children_smoker <- lm(charges ~ ., data = data_rmv_manY_children_smoker)
+
+# use the function
+results <- check_assumptions(lm_model_rmv_manY_children_smoker)
+print(results)
+
+summary(lm_model_rmv_manY_children_smoker)
+```
+
+### Variables : bmi, age (smokers and non-smokers separated)
+
+```{r}
+# Take the smokers
+data_smoker_many_child <- data_new[data_new$smoker == "yes", ]
+
+# Remove the "smoker" and "many_children" column
+data_smoker_many_child <- data_smoker_many_child[, -which(names(data_smoker_many_child) == "smoker")]
+data_smoker_many_child <- data_smoker_many_child[, -which(names(data_smoker_many_child) == "many_children")]
+
+# fit a linear regression model
+lm_model_smoker_many_child <- lm(charges ~ ., data = data_smoker_many_child)
+
+# use the function
+results <- check_assumptions(lm_model_smoker_many_child)
+print(results)
+
+summary(lm_model_smoker_many_child)
+
+
+
+# Take the smokers
+data_smoker_no_many_child <- data_new[data_new$smoker == "no", ]
+
+# Remove the "smoker" and "many_children" column
+data_smoker_no_many_child <- data_smoker_no_many_child[, -which(names(data_smoker_no_many_child) == "smoker")]
+data_smoker_no_many_child <- data_smoker_no_many_child[, -which(names(data_smoker_no_many_child) == "many_children")]
+
+# fit a linear regression model
+lm_model_smoker_no_many_child <- lm(charges ~ ., data = data_smoker_no_many_child)
+
+# use the function
+results <- check_assumptions(lm_model_smoker_no_many_child)
+print(results)
+
+summary(lm_model_smoker_no_many_child)
+```
+
+### Variables : smoker, bmi, age (many_children/few_children) for non-smokers
+
+```{r}
+# Take the smokers
+data_smoker_many_child <- data_new[data_new$smoker == "no", ]
+data_smoker_many_child <- data_smoker_many_child[data_smoker_many_child$many_children == 1, ]
+
+# Remove the "smoker" and "many_children" column
+data_smoker_many_child <- data_smoker_many_child[, -which(names(data_smoker_many_child) == "smoker")]
+data_smoker_many_child <- data_smoker_many_child[, -which(names(data_smoker_many_child) == "many_children")]
+
+# fit a linear regression model
+lm_model_smoker_many_child <- lm(charges ~ ., data = data_smoker_many_child)
+
+# use the function
+results <- check_assumptions(lm_model_smoker_many_child)
+print(results)
+
+summary(lm_model_smoker_many_child)
+
+
+
+
+# Take the smokers
+data_smoker_no_many_child <- data_new[data_new$smoker == "no", ]
+data_smoker_no_many_child <- data_smoker_no_many_child[data_smoker_no_many_child$many_children == 1, ]
+
+# Remove the "smoker" and "many_children" column
+data_smoker_no_many_child <- data_smoker_no_many_child[, -which(names(data_smoker_no_many_child) == "smoker")]
+data_smoker_no_many_child <- data_smoker_no_many_child[, -which(names(data_smoker_no_many_child) == "many_children")]
+
+# fit a linear regression model
+lm_model_smoker_no_many_child <- lm(charges ~ ., data = data_smoker_no_many_child)
+
+# use the function
+results <- check_assumptions(lm_model_smoker_no_many_child)
+print(results)
+
+summary(lm_model_smoker_no_many_child)
+```
+
+### Variables : smoker, bmi, age (many_children/few_children) for smokers
+
+```{r}
+# Take the smokers
+data_smoker <- data_new[data_new$smoker == "yes", ]
+
+# Remove the "smoker" and "many_children" column
+data_smoker <- data_smoker[, -which(names(data_smoker) == "smoker")]
+data_smoker <- data_smoker[, -which(names(data_smoker) == "many_children")]
+
+# fit a linear regression model
+lm_model_smoker <- lm(charges ~ ., data = data_smoker)
+
+# use the function
+results <- check_assumptions(lm_model_smoker)
+print(results)
+
+summary(lm_model_smoker)
+
+
+# Take the smokers
+data_non_smoker <- data_new[data_new$smoker == "no",]
+
+# Remove the "smoker" and "many_children" column
+data_non_smoker <- data_non_smoker[, -which(names(data_non_smoker) == "smoker")]
+data_non_smoker <- data_non_smoker[, -which(names(data_non_smoker) == "many_children")]
+
+# fit a linear regression model
+lm_model_non_smoker <- lm(charges ~ ., data = data_non_smoker)
+
+# use the function
+results <- check_assumptions(lm_model_non_smoker)
+print(results)
+
+summary(lm_model_non_smoker)
+```
+
+# Model Evaluation & Prediction
+
+## Evaluation
+
+```{r}
+library(caret)
+
+# Set a seed for reproducibility
+set.seed(123)
+
+# Split the data into training and testing sets (80% training, 20% testing)
+index <- createDataPartition(data_rmv_many_children$charges, p = 0.8, list = FALSE)
+train_data <- data_rmv_many_children[index, ]
+test_data <- data_rmv_many_children[-index, ]
+
+# Fit a linear regression model on the training data
+lm_model_rmv_many_children <- lm(charges ~ ., data = train_data)
+
+# Predict on the test set
+predictions <- predict(lm_model_rmv_many_children, newdata = test_data)
+
+# Evaluate the model
+metrics <- data.frame(
+  RMSE = sqrt(mean((test_data$charges - predictions)^2)),
+  MAE = mean(abs(test_data$charges - predictions)),
+  R_squared = 1 - sum((test_data$charges - predictions)^2) / sum((test_data$charges - mean(test_data$charges))^2)
+)
+
+# Print the metrics
+print(metrics)
+```
+
+## Prediction
+
+```{r}
+# Randomly select an index from the test set
+random_index <- sample(1:nrow(test_data), 1)
+
+# Extract the selected observation
+selected_observation <- test_data[random_index, ]
+
+# Extract the predictor variables for the selected observation
+selected_predictors <- selected_observation[, -which(names(selected_observation) == "charges")]
+
+# Predict the charges for the selected observation
+prediction <- predict(lm_model_rmv_many_children, newdata = selected_predictors)
+
+# Compute the prediction interval
+prediction_interval <- predict(lm_model_rmv_many_children, newdata = selected_predictors, interval = "prediction")
+
+# Print the actual value, prediction, and prediction interval
+cat("Actual Value:", selected_observation$charges, "\n")
+cat("Prediction:", prediction, "\n")
+cat("Prediction Interval: [", prediction_interval[2], ";", prediction_interval[3], "]\n")
+```
+
+## 
